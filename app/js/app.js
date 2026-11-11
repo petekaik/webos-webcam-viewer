@@ -22,7 +22,7 @@
   /* ------------------------------------------------------------------ */
 
   var APP_ID = 'com.petekaik.webcamviewer';
-  var APP_VERSION = '0.4.0';
+  var APP_VERSION = '0.4.1';
 
   /* The service bundled with this app (service/): receives motion alerts on the TV itself. */
   var TV_SERVICE_ID = APP_ID + '.service';
@@ -2090,29 +2090,17 @@
 
   /* Exit: try every route in turn. On the TV (12 Nov 2026), PalmSystem.platformBack() alone
      did not leave the NAS-hosted page, so log what exists and what Luna answers. */
+  /* Exit. On the TV (webOS 4.4.3) window.close() is what actually closes the app: LG's system close call
+     (applicationManager/close) is refused to apps, and platformBack() does nothing from a packaged page,
+     so it is only tried first in case another webOS version honours it. */
   function exitApp() {
-    var bridge;
-    console.log('[app] exit: PalmSystem=' + !!window.PalmSystem +
-      ' platformBack=' + !!(window.PalmSystem && window.PalmSystem.platformBack) +
-      ' PalmServiceBridge=' + !!window.PalmServiceBridge);
+    console.log('[app] exit');
     try {
       if (window.PalmSystem && typeof window.PalmSystem.platformBack === 'function') {
         window.PalmSystem.platformBack();
       }
     } catch (e) {
       console.warn('[app] platformBack failed: ' + (e && e.message));
-    }
-    try {
-      if (window.PalmServiceBridge) {
-        bridge = new window.PalmServiceBridge();
-        bridge.onservicecallback = function (response) {
-          console.log('[app] luna close -> ' + response);
-        };
-        bridge.call('luna://com.webos.applicationManager/close',
-          JSON.stringify({ id: APP_ID }));
-      }
-    } catch (e) {
-      console.warn('[app] luna close failed: ' + (e && e.message));
     }
     setTimeout(function () {
       try {
