@@ -25,9 +25,15 @@ var fs = require('fs');
 var path = require('path');
 
 var REPO_ROOT = path.resolve(__dirname, '..', '..');
-var APP_DIR = process.env.WEBCAM_APP_DIR
-	? path.resolve(process.env.WEBCAM_APP_DIR)
-	: path.join(REPO_ROOT, 'app');
+// Checks app/ (Chromium 53) and service/ (Node 0.12 on the TV) when it exists. WEBCAM_APP_DIR overrides
+// with one directory, or several separated by ':'.
+var APP_DIRS = process.env.WEBCAM_APP_DIR
+	? process.env.WEBCAM_APP_DIR.split(':').map(function (d) { return path.resolve(d); })
+	: [path.join(REPO_ROOT, 'app')].concat(
+		fs.existsSync(path.join(REPO_ROOT, 'service')) ? [path.join(REPO_ROOT, 'service')] : []);
+
+// Missing in the TV's Node 0.12.2 (V8 3.28). Only applied under a directory named 'service'.
+var NODE012_MISSING = /\.(includes|startsWith|endsWith|repeat|find|findIndex|fill)\(|\bObject\.assign\b|\bBuffer\.from\b|\bArray\.from\b|\bPromise\b|\bnew (Map|Set|WeakMap|WeakSet)\b|\bSymbol\b|\bcrypto\.timingSafeEqual\b|\bprocess\.hrtime\.bigint\b/;
 
 // Added after Chrome 53: Object.values/entries (54), Element.append/prepend (54),
 // padStart/padEnd (57), Promise#finally (63), flat/flatMap (69), closest is fine (41).
@@ -59,7 +65,7 @@ function findJsFiles(dir, out) {
 		var entry = entries[i];
 		var full = path.join(dir, entry.name);
 		if (entry.isDirectory()) {
-			if (entry.name === 'node_modules' || entry.name === '.git') continue;
+			if (entry.name === 'node_modules' || entry.name === '.git' || entry.name === 'test') continue;
 			findJsFiles(full, out);
 		} else if (entry.isFile() && /\.js$/i.test(entry.name)) {
 			out.push(full);
@@ -70,17 +76,18 @@ function findJsFiles(dir, out) {
 function main() {
 	var acorn = loadAcorn();
 
-	if (!fs.existsSync(APP_DIR) || !fs.statSync(APP_DIR).isDirectory()) {
-		console.error('es5-check: app directory not found: ' + APP_DIR);
-		console.error('  (set WEBCAM_APP_DIR to point somewhere else)');
-		process.exit(2);
-	}
-
 	var files = [];
-	findJsFiles(APP_DIR, files);
+	APP_DIRS.forEach(function (dir) {
+		if (!fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) {
+			console.error('es5-check: directory not found: ' + dir);
+			console.error('  (set WEBCAM_APP_DIR to point somewhere else)');
+			process.exit(2);
+		}
+		findJsFiles(dir, files);
+	});
 
 	if (files.length === 0) {
-		console.error('es5-check: no .js files under ' + APP_DIR);
+		console.error('es5-check: no .js files under ' + APP_DIRS.join(', '));
 		console.error('  Refusing to report success: an app with no JavaScript is probably the wrong path.');
 		process.exit(2);
 	}
@@ -107,10 +114,14 @@ function main() {
 			// same-named user methods; extend list when the TV throws "is not a function".
 			if (file.indexOf(path.sep + 'vendor' + path.sep) === -1) {
 				var lines = raw.split('\n');
+				var inService = file.indexOf(path.sep + 'service' + path.sep) !== -1;
 				for (var n = 0; n < lines.length; n++) {
 					var m = CHROME53_MISSING.exec(lines[n]);
 					if (m) violations.push(path.relative(REPO_ROOT, file) + ':' + (n + 1) +
 						'  API not in Chromium 53: ' + m[0]);
+					var m2 = inService ? NODE012_MISSING.exec(lines[n]) : null;
+					if (m2) violations.push(path.relative(REPO_ROOT, file) + ':' + (n + 1) +
+						'  API not in the TV\'s Node 0.12: ' + m2[0]);
 				}
 			}
 		} catch (err) {

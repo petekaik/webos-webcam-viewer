@@ -49,8 +49,10 @@ Linux; see its README.
 The Developer Mode session expires after a while (1000 hours on the TV this was developed on). Open the
 Developer Mode app to extend it, or installed apps may stop opening.
 
-**Updating:** install the newer `.ipk` the same way. Check your cameras afterwards, because an update may
-reset the saved settings; [re-import them](CONFIG.md).
+**Updating:** install the newer `.ipk` the same way, over the old one. **Your saved settings are kept** (cameras,
+alert settings; verified on webOS 4.4.3). Uninstalling first wipes them. The app notices new releases by itself
+(a banner, and **Settings → General**), and the [updater job](../updater/README.md) can install them for you:
+an app on the TV cannot install packages without root, so the job runs on a computer or NAS that can reach the TV.
 
 **Uninstalling:** `ares-install -d tv --remove com.petekaik.webcamviewer`
 
@@ -81,7 +83,8 @@ ares-launch -d tv org.webosbrew.hbchannel -p '{"launchMode":"addRepository","url
 
 The feed is a static file in this repository (`webosbrew/apps.json`), listing the release `.ipk` with its
 checksum. It follows the same format other third-party repositories use, **but it has not yet been tried in a
-Homebrew Channel by the author.** If it fails for you, please open an issue.
+Homebrew Channel by the author.** If it fails for you, please open an issue. Updates through the Channel are
+the Channel's own business; the updater job is for Route A.
 
 ## First run
 

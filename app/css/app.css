@@ -1081,3 +1081,66 @@ body {
   margin-right: 20px;
   font-size: 24px;
 }
+
+/* --------------------------------------------------------------- banner */
+/* A motion alert or update notice over any screen; inside the TV safe area. */
+.banner {
+  position: absolute;
+  top: 54px;
+  left: 96px;
+  right: 96px;
+  z-index: 50;
+  display: -webkit-flex;
+  display: flex;
+  -webkit-align-items: center;
+  align-items: center;
+  padding: 24px 32px;
+  background-color: #14171b;
+  border: 2px solid #f0b35b;
+  border-radius: 14px;
+  box-shadow: 0 0 0 2px #060708, 0 18px 48px rgba(0, 0, 0, 0.6);
+}
+
+.banner.is-hidden {
+  display: none;
+}
+
+.banner-icon {
+  -webkit-flex: none;
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin-right: 24px;
+  border-radius: 50%;
+  background-color: #f0b35b;
+  box-shadow: 0 0 0 6px rgba(240, 179, 91, 0.22);
+}
+
+.banner-text {
+  -webkit-flex: 1 1 auto;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.banner-title {
+  display: block;
+  font-size: 34px;
+  font-weight: 600;
+  color: #faf6ee;
+}
+
+.banner-detail {
+  display: block;
+  margin-top: 4px;
+  font-size: 22px;
+  color: rgba(244, 240, 232, 0.62);
+}
+
+.banner-hint {
+  -webkit-flex: none;
+  flex: none;
+  margin-left: 32px;
+  font-size: 22px;
+  white-space: pre;
+  color: rgba(244, 240, 232, 0.78);
+}

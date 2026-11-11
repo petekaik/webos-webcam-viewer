@@ -13,10 +13,10 @@ command -v ares-package >/dev/null 2>&1 || {
 
 # Catch ES6+ syntax and APIs missing in Chromium 53 before packaging: far cheaper than a black screen.
 (cd tools/testing && [ -d node_modules/acorn ] || npm install --silent)
-node tools/testing/es5-check.js
+node tools/testing/es5-check.js   # checks app/ and service/
 
 APP_ID=$(node -p "require('./app/appinfo.json').id")
-ares-package app -o build
+ares-package app service -o build   # the service receives motion alerts on the TV
 IPK=$(ls -t build/"${APP_ID}"_*.ipk | head -n 1)
 ares-install -d "$TV" "$IPK"
 ares-launch -d "$TV" "$APP_ID"

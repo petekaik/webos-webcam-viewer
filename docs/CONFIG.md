@@ -44,6 +44,9 @@ Every key is optional, and only the keys present are changed.
 | `alertsUrl` | Base URL of the [alert service](../alerts/README.md), e.g. `http://192.168.0.10:8790`; empty turns it off. |
 | `debug` | `true` to send the app's log lines to `loggerServer`. |
 | `confirmExit` | Show "Exit Webcam Viewer?" on Back from the grid. |
+| `tvAlerts` | `true` to receive motion alerts on the TV itself ([TV-ALERTS.md](TV-ALERTS.md)). |
+| `banner` | Show alerts as a banner while the app is open (default `true`). |
+| `checkUpdates` | Ask GitHub for the latest release number (default `true`). |
 
 **Hosting the file.** The app fetches it from the TV, and it runs as a local app (`file://`), so the server
 must allow cross-origin reads. Any static server with CORS works, for example, on a computer on your network:

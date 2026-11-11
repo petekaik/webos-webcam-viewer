@@ -2,14 +2,18 @@
 
 Watch your IP / security cameras live on an LG webOS TV, with nothing but the remote.
 
-> Unofficial. Not affiliated with or endorsed by LG Electronics. Early release (0.3.x).
+> Unofficial. Not affiliated with or endorsed by LG Electronics. Early release (0.4.x).
 
 - **Live video with sound** from HLS streams, 1–4 cameras. In full screen, **←/→** switch cameras.
 - **Grid with live status**: still previews and a Live / Loading / No preview badge per camera.
 - **Built for the remote**: D-pad and Magic Remote, LG's on-screen keyboard for settings, themed scrollbars.
 - **Settings menu**: Cameras, Notifications, General, Developer. Optional "Confirm exit" dialog.
-- **Motion alerts (optional)**: a popup over live TV with an **Open live view** button, triggered by
-  your home automation or camera system. See [`alerts/`](alerts/README.md).
+- **Motion alerts (optional)**, triggered by your home automation or camera system with one HTTP request:
+  received **by the TV itself** (a banner over what you watch, or a toast that opens the camera:
+  [docs/TV-ALERTS.md](docs/TV-ALERTS.md)), or by a small network service that shows a popup with an
+  **Open live view** button ([`alerts/`](alerts/README.md)).
+- **Updates**: the app tells you when a new release exists, and an optional job can install it for you
+  ([`updater/`](updater/README.md)).
 - **Private by design**: your cameras and settings live only in the TV's browser storage. The app ships
   with one public demo stream, no account, no analytics, no cloud. It talks only to the hosts you enter.
 - **Plain ES5, no build step**: runs on webOS 4's Chromium 53, where modern frameworks fail to start.
@@ -45,25 +49,31 @@ Channel route for rooted TVs: **[docs/INSTALL.md](docs/INSTALL.md)**.
 - **About 10–15 s behind real time.** The player starts two 5-second segments back from the live edge,
   because starting closer made playback stall on the OLED65C8. See [docs/STREAMS.md](docs/STREAMS.md).
 - **Motion alerts cannot carry a picture** on webOS 4.4 firmware 05.50.70: toasts with an image were silently
-  dropped. Alerts are text plus an "Open live view" button.
-- **After updating the app, check your cameras.** Updating over an installed copy may reset the saved
-  settings. Keep your import file handy; re-importing takes seconds.
+  dropped. Alerts are text; the network service adds an "Open live view" button.
+- **Alerts on the TV start with the app.** After a TV restart, open Webcam Viewer once so its alert service
+  is running again.
 
 ## Privacy
 
 Everything you configure stays on the TV. Nothing is sent anywhere except the requests you would expect:
 to your stream URLs, your preview-image URLs, your alert service, and (only if you switch **Debug mode**
-on and enter a log server) log lines to that server. There are no analytics or update checks.
+on and enter a log server) log lines to that server. There are no analytics. About twice a day the app asks
+GitHub for the latest release number (a public file; nothing about you is sent). Switch that off in
+**Settings → General → Check for updates**.
 
 ## Development
 
 ```
 node tools/testing/es5-check.js           # fails on anything Chromium 53 can't parse or lacks
 cd tools/testing && npm install && npx playwright test
-cd alerts && node --test
+cd alerts && node --test                  # the network alert service
+cd service && node --test                 # the alert service that runs on the TV
+cd updater && node --test                 # the auto-update job
 ```
 
 - `app/` is the whole app: `index.html`, `css/`, `js/app.js`, vendored hls.js 0.14.17. No transpiler.
+- `service/` is the alert service bundled with the app (ES5 for the TV's Node 0.12). `tools/deploy.sh`
+  packages both.
 - Everything must be ES5, with no CSS variables, flex `gap` or grid (`es5-check.js` enforces the syntax).
 - `tools/chromium53/` runs the app in a real Chromium 53 in Docker, the same engine version as the TV.
 - `tools/deploy.sh` packages and installs it with the webOS CLI.

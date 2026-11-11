@@ -1,0 +1,7 @@
+{
+  "id": "com.petekaik.webcamviewer.service",
+  "description": "Webcam Viewer motion alerts",
+  "services": [
+    { "name": "com.petekaik.webcamviewer.service" }
+  ]
+}

@@ -22,7 +22,14 @@
   /* ------------------------------------------------------------------ */
 
   var APP_ID = 'com.petekaik.webcamviewer';
-  var APP_VERSION = '0.3.1';
+  var APP_VERSION = '0.4.0';
+
+  /* The service bundled with this app (service/): receives motion alerts on the TV itself. */
+  var TV_SERVICE_ID = APP_ID + '.service';
+
+  /* Release feed (Homebrew Channel format) used for the "update available" check. */
+  var UPDATE_FEED_URL = 'https://raw.githubusercontent.com/petekaik/webos-webcam-viewer/main/webosbrew/apps.json';
+  var UPDATE_CHECK_INTERVAL_MS = 12 * 3600 * 1000;
 
   /* First-run camera list: one public demo stream (H.264 MPEG-TS, CORS open), so a fresh
      install shows something playable. Replaced by the user's own list once they edit or import. */
@@ -68,7 +75,8 @@
      phone-home logger, loggerServer is its "host:port" (tools/logger-server.js) and
      alertsUrl the motion-alert service (docs/ALERTS.md) (Developer). Empty = not set. */
   var PREFS_KEY = 'webcamviewer.prefs.v1';
-  var prefs = { confirmExit: true, debug: false, loggerServer: '', alertsUrl: '' };
+  var prefs = { confirmExit: true, debug: false, loggerServer: '', alertsUrl: '',
+    tvAlerts: false, banner: true, checkUpdates: true, lastUpdateCheck: 0, seenUpdate: '' };
 
   /* "host:port" -> {host, port}, or null when empty or malformed. */
   function parseLoggerServer(value) {
@@ -84,6 +92,11 @@
   /* Alert service base URL without a trailing slash, or '' when not configured. */
   function alertsBase() {
     return validAlertsUrl(prefs.alertsUrl) ? prefs.alertsUrl.replace(/\/$/, '') : '';
+  }
+
+  /* Alerts can come from this TV's own service (tvAlerts) or from a network alert service. */
+  function alertsConfigured() {
+    return prefs.tvAlerts || !!alertsBase();
   }
 
   function loadPrefs() {
@@ -113,6 +126,21 @@
       }
       if (typeof parsed.alertsUrl === 'string') {
         prefs.alertsUrl = parsed.alertsUrl;
+      }
+      if (typeof parsed.tvAlerts === 'boolean') {
+        prefs.tvAlerts = parsed.tvAlerts;
+      }
+      if (typeof parsed.banner === 'boolean') {
+        prefs.banner = parsed.banner;
+      }
+      if (typeof parsed.checkUpdates === 'boolean') {
+        prefs.checkUpdates = parsed.checkUpdates;
+      }
+      if (typeof parsed.lastUpdateCheck === 'number') {
+        prefs.lastUpdateCheck = parsed.lastUpdateCheck;
+      }
+      if (typeof parsed.seenUpdate === 'string') {
+        prefs.seenUpdate = parsed.seenUpdate;
       }
     }
   }
@@ -196,13 +224,16 @@
     }
   }
 
+  /* Served from localhost: the laptop test suite's mock server, not a TV. */
+  function isLocalDev() {
+    return /^(127\.|localhost$)/.test(window.location.hostname);
+  }
+
   function connectLogger() {
     var socket;
     var target = parseLoggerServer(prefs.loggerServer);
-    /* Debug off or no log server: never open the socket. Served from localhost = the
-       laptop test suite's mock server: don't flood the real TV log with test runs. */
-    if (!loggerWanted() || !target ||
-        /^(127\.|localhost$)/.test(window.location.hostname)) {
+    /* Debug off or no log server: never open the socket. Don't flood the real TV log with test runs. */
+    if (!loggerWanted() || !target || isLocalDev()) {
       return;
     }
     try {
@@ -1203,6 +1234,10 @@
       window.localStorage.setItem(STORAGE_KEY, JSON.stringify(cameraConfigs));
     } catch (e) {
       console.warn('[settings] could not persist camera list: ' + (e.message || e));
+    }
+    /* This TV's alert service needs the camera ids and names for webhooks and alert text. */
+    if (prefs.tvAlerts && window.PalmServiceBridge) {
+      tvConfigure(null);
     }
   }
 
@@ -2288,17 +2323,17 @@
   function notificationSummary() {
     var s = alerts.settings;
     var qh = s && s.quietHours;
-    if (!alertsBase()) {
+    if (!alertsConfigured()) {
       return 'Not set up';
     }
     if (alerts.loadError) {
-      return 'Alert service unavailable';
+      return prefs.tvAlerts ? 'TV alert service unavailable' : 'Alert service unavailable';
     }
     if (!s) {
       return '…';
     }
     return (s.enabled === true ? 'On' : 'Off') + ' · ' +
-      (s.style === 'toast' ? 'Toast' : 'Popup') + ' · ' +
+      (prefs.tvAlerts ? 'This TV' : (s.style === 'toast' ? 'Toast' : 'Popup')) + ' · ' +
       (qh && qh.enabled === true ? 'Quiet hours on' : 'Quiet hours off');
   }
 
@@ -2453,6 +2488,26 @@
         savePrefs();
         renderGeneral('general:confirm-exit');
       }
+    }));
+    list.appendChild(row);
+
+    row = alertsRow('Check for updates', 'Asks GitHub for the latest release; sends nothing about you');
+    row.appendChild(alertsToggleButton(prefs.checkUpdates !== false, {
+      action: 'general-check-updates',
+      focusKey: 'general:check-updates',
+      onPress: function () {
+        prefs.checkUpdates = !prefs.checkUpdates;
+        savePrefs();
+        renderGeneral('general:check-updates');
+      }
+    }));
+    list.appendChild(row);
+
+    row = alertsRow('Version ' + APP_VERSION, updateStatusText());
+    row.appendChild(makeSettingsButton('Check now', {
+      action: 'general-update-check',
+      focusKey: 'general:update-check',
+      onPress: function () { checkForUpdate(true); }
     }));
     list.appendChild(row);
 
@@ -2628,7 +2683,21 @@
         if (typeof data.confirmExit === 'boolean') {
           prefs.confirmExit = data.confirmExit;
         }
+        if (typeof data.tvAlerts === 'boolean') {
+          prefs.tvAlerts = data.tvAlerts;
+          applied.push(data.tvAlerts ? 'alerts on this TV' : 'network alerts');
+        }
+        if (typeof data.banner === 'boolean') {
+          prefs.banner = data.banner;
+        }
+        if (typeof data.checkUpdates === 'boolean') {
+          prefs.checkUpdates = data.checkUpdates;
+        }
         savePrefs();
+        tvStopEvents();
+        stopAlertPolling();
+        tvStart();
+        startAlertPolling();
         disconnectLogger();
         applyDebugSetting();
         console.log('[settings] imported ' + (applied.join(', ') || 'preferences') + ' from ' + url);
@@ -2958,12 +3027,343 @@
     settings: null,
     saved: null,
     events: null,
-    eventsError: false
+    eventsError: false,
+    pendingFocus: null /* set by loadAlerts(): focus to use at the first full render ('' = default control) */
   };
   var alertsSaveTimer = null;
 
   function cloneAlertsSettings(settings) {
     return JSON.parse(JSON.stringify(settings));
+  }
+
+  /* ------------------------------------------------------------------
+     This TV's own alert service (service/), reached over Luna. The page's alertsRequest() routes
+     here when prefs.tvAlerts is on, so the Notifications page works the same for both sources.
+     ------------------------------------------------------------------ */
+
+  var tv = { info: null, events: null };
+  var ALERT_TYPE_LABEL = { person: 'Person', vehicle: 'Vehicle', animal: 'Animal', motion: 'Motion' };
+
+  /* One Luna request to our service; cb(errorText | null, payload). */
+  function tvCall(method, params, cb) {
+    var bridge;
+    var done = false;
+    var timer;
+    function finish(error, payload) {
+      if (done) {
+        return;
+      }
+      done = true;
+      clearTimeout(timer);
+      cb(error, payload);
+    }
+    if (!window.PalmServiceBridge) {
+      setTimeout(function () { finish('this needs a webOS TV', null); }, 0);
+      return;
+    }
+    timer = setTimeout(function () { finish('service timeout', null); }, 8000);
+    try {
+      bridge = new window.PalmServiceBridge();
+      bridge.onservicecallback = function (raw) {
+        var payload = null;
+        try {
+          payload = JSON.parse(raw);
+        } catch (e) {
+          finish('bad reply', null);
+          return;
+        }
+        if (payload && payload.returnValue === false) {
+          finish(payload.errorText || 'failed', payload);
+        } else {
+          finish(null, payload);
+        }
+      };
+      bridge.call('luna://' + TV_SERVICE_ID + '/' + method, JSON.stringify(params || {}));
+    } catch (e) {
+      finish(e && e.message ? e.message : 'Luna call failed', null);
+    }
+  }
+
+  /* Tell the service our cameras (names for the alert text, ids for the webhook) and make sure it listens. */
+  function tvConfigure(cb) {
+    var cams = [];
+    var i;
+    for (i = 0; i < cameraConfigs.length; i++) {
+      cams.push({ id: cameraConfigs[i].id, name: cameraConfigs[i].name });
+    }
+    tvCall('configure', { cameras: cams }, function (error, payload) {
+      if (!error && payload) {
+        tv.info = { ip: payload.ip, port: payload.port, token: payload.token, listening: payload.listening };
+      } else {
+        tv.info = { error: error || 'failed' };
+        console.warn('[alerts] TV service: ' + tv.info.error);
+      }
+      if (cb) {
+        cb(error);
+      }
+    });
+  }
+
+  /* While the app is on screen it subscribes, and the service then sends alerts here as a banner
+     instead of a toast. Hidden or closed: the subscription ends and alerts become toasts again. */
+  function tvStartEvents() {
+    var bridge;
+    if (tv.events || !prefs.tvAlerts || !prefs.banner || !window.PalmServiceBridge || document.hidden) {
+      return;
+    }
+    try {
+      bridge = new window.PalmServiceBridge();
+      bridge.onservicecallback = function (raw) {
+        var payload = null;
+        try {
+          payload = JSON.parse(raw);
+        } catch (e) {
+          return;
+        }
+        if (payload && payload.event) {
+          showAlertBanner(payload.event);
+        }
+      };
+      bridge.call('luna://' + TV_SERVICE_ID + '/events', JSON.stringify({ subscribe: true }));
+      tv.events = bridge;
+    } catch (e) {
+      tv.events = null;
+    }
+  }
+
+  function tvStopEvents() {
+    if (tv.events) {
+      try {
+        tv.events.cancel();
+      } catch (e) {
+        /* already gone */
+      }
+      tv.events = null;
+    }
+  }
+
+  function tvStart() {
+    if (!prefs.tvAlerts) {
+      return;
+    }
+    tvConfigure(function (error) {
+      if (!error) {
+        tvStartEvents();
+      }
+    });
+  }
+
+  /* The Notifications page's four calls, answered by the service instead of an HTTP alert service. */
+  function tvAlertsRequest(method, path, body, callback) {
+    if (path === '/settings' && method === 'GET') {
+      tvCall('settings', {}, function (error, payload) {
+        callback(error, payload && payload.settings ? payload.settings : null);
+      });
+    } else if (path === '/settings' && method === 'PUT') {
+      tvCall('putSettings', { settings: body }, callback);
+    } else if (path === '/snooze' && method === 'POST') {
+      tvCall('snooze', { minutes: body.minutes }, callback);
+    } else if (path === '/status' && method === 'GET') {
+      tvCall('status', {}, callback);
+    } else {
+      setTimeout(function () { callback('unsupported', null); }, 0);
+    }
+  }
+
+  /* ------------------------------------------------------------------
+     In-app banner: a motion alert (or an update notice) over whatever is on screen.
+     OK opens the camera, Back dismisses; a pointer click works as OK.
+     ------------------------------------------------------------------ */
+
+  var BANNER_MS = 10000;
+  var bannerTimer = null;
+
+  function hideBanner() {
+    clearTimeout(bannerTimer);
+    bannerTimer = null;
+    state.banner = null;
+    $('banner').className = 'banner is-hidden';
+  }
+
+  function showBanner(title, detail, hint, cameraId) {
+    $('banner-title').textContent = title;
+    $('banner-detail').textContent = detail || '';
+    $('banner-hint').textContent = hint;
+    $('banner').className = 'banner';
+    state.banner = { camera: cameraId || null };
+    clearTimeout(bannerTimer);
+    bannerTimer = setTimeout(hideBanner, BANNER_MS);
+  }
+
+  function showAlertBanner(event) {
+    var name = event.name || event.camera;
+    var label = event.type === 'test' ? 'Test alert' : (ALERT_TYPE_LABEL[event.type] || 'Motion') + ' detected';
+    console.log('[alerts] banner: ' + name + ' ' + label);
+    showBanner(name + ': ' + label, formatClock(new Date()), 'OK  Watch      BACK  Dismiss', event.camera);
+  }
+
+  /* OK or click on the banner: open that camera (leaving Settings first). */
+  function activateBanner() {
+    var cameraId = state.banner ? state.banner.camera : null;
+    hideBanner();
+    if (!cameraId || state.view === 'form') {
+      return;
+    }
+    if (SETTINGS_VIEWS[state.view]) {
+      closeSettings();
+    }
+    openCameraFromLaunch(cameraId);
+  }
+
+  /* Network alert service: it holds an alert back while this app is open ("already watching"),
+     so while the app is on screen poll its recent events and turn those into banners. */
+  var alertPoll = { timer: null, lastAt: null };
+
+  function stopAlertPolling() {
+    clearInterval(alertPoll.timer);
+    alertPoll.timer = null;
+  }
+
+  function startAlertPolling() {
+    function poll() {
+      if (document.hidden) {
+        return;
+      }
+      alertsRequest('GET', '/status', null, function (error, data) {
+        var events;
+        var newest;
+        var cfg;
+        var i;
+        if (error || !data || !data.events) {
+          return;
+        }
+        events = data.events;
+        newest = events.length ? events[0].at : '';
+        if (alertPoll.lastAt === null) {
+          alertPoll.lastAt = newest;
+          return;
+        }
+        for (i = events.length - 1; i >= 0; i--) { /* oldest first */
+          if (events[i].at > alertPoll.lastAt && events[i].reason === 'viewing') {
+            cfg = cameraConfigById(events[i].camera);
+            showAlertBanner({ camera: events[i].camera, name: cfg ? cfg.name : events[i].camera, type: events[i].type });
+          }
+        }
+        if (newest > alertPoll.lastAt) {
+          alertPoll.lastAt = newest;
+        }
+      });
+    }
+    stopAlertPolling();
+    alertPoll.lastAt = null;
+    if (prefs.tvAlerts || !prefs.banner || !alertsBase()) {
+      return;
+    }
+    alertPoll.timer = setInterval(poll, 3000);
+    poll();
+  }
+
+  /* ------------------------------------------------------------------
+     Update check. Reads the release feed (a static JSON file on GitHub) and compares versions.
+     Installing is not possible from inside the TV (the TV denies it to apps without root), so this
+     only tells the user; updater/ is the job that installs it.
+     ------------------------------------------------------------------ */
+
+  var updateInfo = { latest: '', checking: false, error: '' };
+
+  function versionParts(v) {
+    var m = /^(\d+)\.(\d+)\.(\d+)/.exec(String(v || ''));
+    return m ? [parseInt(m[1], 10), parseInt(m[2], 10), parseInt(m[3], 10)] : null;
+  }
+
+  /* true when version a is newer than version b */
+  function versionNewer(a, b) {
+    var pa = versionParts(a);
+    var pb = versionParts(b);
+    var i;
+    if (!pa || !pb) {
+      return false;
+    }
+    for (i = 0; i < 3; i++) {
+      if (pa[i] !== pb[i]) {
+        return pa[i] > pb[i];
+      }
+    }
+    return false;
+  }
+
+  function updateStatusText() {
+    if (updateInfo.checking) {
+      return 'Checking…';
+    }
+    if (updateInfo.error) {
+      return 'Could not check (' + updateInfo.error + ')';
+    }
+    if (!updateInfo.latest) {
+      return 'Not checked yet';
+    }
+    return versionNewer(updateInfo.latest, APP_VERSION)
+      ? 'Update available: ' + updateInfo.latest
+      : 'Up to date';
+  }
+
+  function checkForUpdate(manual) {
+    var xhr;
+    function finish() {
+      updateInfo.checking = false;
+      if (state.view === 'general') {
+        renderGeneral(manual ? 'general:update-check' : null);
+      }
+    }
+    if (updateInfo.checking) {
+      return;
+    }
+    updateInfo.checking = true;
+    updateInfo.error = '';
+    if (state.view === 'general') {
+      renderGeneral(null);
+    }
+    try {
+      xhr = new XMLHttpRequest();
+      xhr.open('GET', UPDATE_FEED_URL, true);
+      xhr.timeout = 10000;
+      xhr.onload = function () {
+        var feed;
+        var i;
+        var pkg = null;
+        try {
+          feed = JSON.parse(xhr.responseText);
+          for (i = 0; i < feed.packages.length; i++) {
+            if (feed.packages[i].id === APP_ID) {
+              pkg = feed.packages[i];
+            }
+          }
+          if (xhr.status !== 200 || !pkg || !versionParts(pkg.manifest.version)) {
+            throw new Error('unexpected feed');
+          }
+        } catch (e) {
+          updateInfo.error = 'bad feed';
+          finish();
+          return;
+        }
+        updateInfo.latest = pkg.manifest.version;
+        prefs.lastUpdateCheck = Date.now();
+        console.log('[update] latest ' + updateInfo.latest + ', running ' + APP_VERSION);
+        if (versionNewer(updateInfo.latest, APP_VERSION) && prefs.seenUpdate !== updateInfo.latest) {
+          prefs.seenUpdate = updateInfo.latest;
+          showBanner('Update available: ' + updateInfo.latest, 'You have ' + APP_VERSION,
+            'BACK  Dismiss', null);
+        }
+        savePrefs();
+        finish();
+      };
+      xhr.onerror = function () { updateInfo.error = 'offline'; finish(); };
+      xhr.ontimeout = function () { updateInfo.error = 'timed out'; finish(); };
+      xhr.send(null);
+    } catch (e) {
+      updateInfo.error = 'failed';
+      finish();
+    }
   }
 
   function alertsHost() {
@@ -2981,6 +3381,10 @@
       }
       finished = true;
       callback(error, data);
+    }
+    if (prefs.tvAlerts) {
+      tvAlertsRequest(method, path, body, callback);
+      return;
     }
     if (!alertsBase()) {
       setTimeout(function () { finish('not configured', null); }, 0);
@@ -3018,7 +3422,8 @@
     }
   }
 
-  function loadAlerts() {
+  function loadAlerts(focusKey) {
+    alerts.pendingFocus = focusKey || '';
     alerts.loading = true;
     alerts.loadError = false;
     alerts.settings = null;
@@ -3301,6 +3706,104 @@
     });
   }
 
+  /* A row of read-only text lines (used for the URL other systems call). */
+  function alertsInfoRow(label, lines) {
+    var row = alertsRow(label, null);
+    var text = row.firstChild;
+    var i;
+    for (i = 0; i < lines.length; i++) {
+      var line = document.createElement('span');
+      line.className = 'settings-row-url alert-event';
+      line.textContent = lines[i];
+      text.appendChild(line);
+    }
+    return row;
+  }
+
+  function alertSourceRow() {
+    var row = alertsRow('Alert source', prefs.tvAlerts
+      ? 'This TV receives alerts from your home automation'
+      : 'A network alert service sends alerts to this TV');
+    row.appendChild(makeSettingsButton(prefs.tvAlerts ? 'This TV' : 'Network service', {
+      action: 'alerts-source',
+      focusKey: 'alerts:source',
+      onPress: toggleAlertSource
+    }));
+    return row;
+  }
+
+  /* TV mode: where to send alerts, and a test button. */
+  function appendTvInfoRows(list) {
+    var info = tv.info;
+    var row;
+    var firstId = cameraConfigs.length ? cameraConfigs[0].id : '';
+    if (!info) {
+      return;
+    }
+    if (info.error) {
+      row = alertsRow('Alert service on this TV', 'Not running: ' + info.error);
+      row.appendChild(makeSettingsButton('Retry', {
+        action: 'alerts-tv-retry',
+        focusKey: 'alerts:tv:retry',
+        onPress: function () { tvStart(); loadAlerts(); }
+      }));
+      list.appendChild(row);
+      return;
+    }
+    list.appendChild(alertsInfoRow('Send alerts to this TV', [
+      'POST http://' + info.ip + ':' + info.port + '/motion?camera=' + (firstId || '<id>') + '&type=person',
+      'token=' + info.token + '    (camera ids: ' + cameraConfigs.map(function (c) { return c.id; }).join(', ') + ')'
+    ]));
+    row = alertsRow('Test alert', 'Shows a banner now, or a toast if you leave the app');
+    row.appendChild(makeSettingsButton('Send test', {
+      action: 'alerts-tv-test',
+      focusKey: 'alerts:tv:test',
+      onPress: function () {
+        tvCall('test', { camera: firstId }, function (error) {
+          showAlertsSaveStatus(error ? 'Not sent: ' + error : 'Sent', !!error);
+        });
+      }
+    }));
+    list.appendChild(row);
+  }
+
+  /* No control below the source row yet: keep D-pad focus on it. */
+  function focusAlertsEntry(key) {
+    var el;
+    if (state.view !== 'notifications') {
+      return;
+    }
+    el = findFocusKey('notifications-screen', key || 'alerts:source') || findFocusKey('notifications-screen', 'alerts:source');
+    if (el) {
+      el.focus();
+    }
+  }
+
+  function toggleAlertSource() {
+    if (!prefs.tvAlerts && !window.PalmServiceBridge) {
+      showAlertsSaveStatus('This mode needs a webOS TV', true);
+      return;
+    }
+    prefs.tvAlerts = !prefs.tvAlerts;
+    savePrefs();
+    alerts.settings = null;
+    alerts.loadError = false;
+    tvStopEvents();
+    stopAlertPolling();
+    if (prefs.tvAlerts) {
+      alerts.loading = true;
+      renderAlerts('alerts:source');
+      tvConfigure(function () {
+        tvStartEvents();
+        loadAlerts('alerts:source');
+      });
+    } else {
+      tv.info = null;
+      loadAlerts('alerts:source');
+      startAlertPolling();
+    }
+  }
+
   function renderAlerts(refocusKey) {
     var list = $('alerts-list');
     var active = document.activeElement;
@@ -3316,23 +3819,32 @@
     }
     clearNode(list);
 
+    /* Where alerts come from: this TV's own service, or a network alert service. */
+    list.appendChild(alertSourceRow());
+    if (prefs.tvAlerts) {
+      appendTvInfoRows(list);
+    }
+
     if (alerts.loading) {
       list.appendChild(alertsMessageRow('Loading…', null));
+      focusAlertsEntry(key);
       return;
     }
 
-    if (!alertsBase()) {
+    if (!alertsConfigured()) {
       list.appendChild(alertsMessageRow(
-        'Motion alerts need the alert service. Set its address in Settings · Developer.', null));
+        'Choose "This TV", or set a network alert service address in Settings · Developer.', null));
+      focusAlertsEntry(key);
       return;
     }
 
     if (alerts.loadError || !alerts.settings) {
       list.appendChild(alertsMessageRow(
-        'Alert service unreachable (' + alertsHost() + '). OK to retry', {
+        (prefs.tvAlerts ? 'The alert service on this TV did not answer' : 'Alert service unreachable (' + alertsHost() + ')') +
+        '. OK to retry', {
         label: 'Retry',
         focusKey: 'alerts:retry',
-        onPress: loadAlerts
+        onPress: function () { if (prefs.tvAlerts) { tvStart(); } loadAlerts(); }
       }));
       if (state.view === 'notifications') {
         toFocus = findFocusKey('notifications-screen', 'alerts:retry');
@@ -3341,6 +3853,13 @@
         }
       }
       return;
+    }
+
+    /* First full render after a load: start from the default control (or the one the caller named),
+       not wherever the loading placeholder left focus. */
+    if (alerts.pendingFocus !== null) {
+      key = alerts.pendingFocus || null;
+      alerts.pendingFocus = null;
     }
 
     s = alerts.settings;
@@ -3358,18 +3877,39 @@
     }));
     list.appendChild(row);
 
-    /* Popup (default; absent in older service settings) or toast. */
-    row = alertsRow('Alert style', 'Popup with buttons, or a corner toast');
-    row.appendChild(makeSettingsButton(s.style === 'toast' ? 'Toast' : 'Popup', {
-      action: 'alerts-style',
-      focusKey: 'alerts:style',
+    /* In-app banner (both sources). Off: alerts show as a TV toast even while the app is open. */
+    row = alertsRow('In-app banner', 'While watching: a banner here instead of a toast over the video');
+    row.appendChild(alertsToggleButton(prefs.banner !== false, {
+      action: 'alerts-banner',
+      focusKey: 'alerts:banner',
       onPress: function () {
-        alertsMutate('alerts:style', function (x) {
-          x.style = x.style === 'toast' ? 'popup' : 'toast';
-        });
+        prefs.banner = !prefs.banner;
+        savePrefs();
+        if (prefs.tvAlerts) {
+          tvStopEvents();
+          tvStartEvents();
+        } else {
+          startAlertPolling();
+        }
+        renderAlerts('alerts:banner');
       }
     }));
     list.appendChild(row);
+
+    /* Popup (default; absent in older service settings) or toast. Only the network service can show a popup. */
+    if (!prefs.tvAlerts) {
+      row = alertsRow('Alert style', 'Popup with buttons, or a corner toast');
+      row.appendChild(makeSettingsButton(s.style === 'toast' ? 'Toast' : 'Popup', {
+        action: 'alerts-style',
+        focusKey: 'alerts:style',
+        onPress: function () {
+          alertsMutate('alerts:style', function (x) {
+            x.style = x.style === 'toast' ? 'popup' : 'toast';
+          });
+        }
+      }));
+      list.appendChild(row);
+    }
 
     /* Snooze */
     row = alertsRow('Snooze',
@@ -3534,18 +4074,20 @@
     }));
     list.appendChild(row);
 
-    /* Suppress while the viewer is in the foreground */
-    row = alertsRow('Not while watching', null);
-    row.appendChild(alertsToggleButton(s.suppressWhileViewing === true, {
-      action: 'alerts-watching',
-      focusKey: 'alerts:watching',
-      onPress: function () {
-        alertsMutate('alerts:watching', function (x) {
-          x.suppressWhileViewing = !(x.suppressWhileViewing === true);
-        });
-      }
-    }));
-    list.appendChild(row);
+    /* Suppress while the viewer is in the foreground (network service only: this TV uses the banner) */
+    if (!prefs.tvAlerts) {
+      row = alertsRow('Not while watching', null);
+      row.appendChild(alertsToggleButton(s.suppressWhileViewing === true, {
+        action: 'alerts-watching',
+        focusKey: 'alerts:watching',
+        onPress: function () {
+          alertsMutate('alerts:watching', function (x) {
+            x.suppressWhileViewing = !(x.suppressWhileViewing === true);
+          });
+        }
+      }));
+      list.appendChild(row);
+    }
 
     /* Recent events, read-only */
     list.appendChild(alertsEventsRow());
@@ -3557,7 +4099,9 @@
       toFocus = findFocusKey('notifications-screen', key);
     }
     if (!toFocus) {
-      toFocus = $('notifications-screen').querySelector(SETTINGS_FOCUS);
+      /* the main on/off switch first; the source row above it is a rarely used control */
+      toFocus = findFocusKey('notifications-screen', 'alerts:enabled') ||
+        $('notifications-screen').querySelector(SETTINGS_FOCUS);
     }
     if (toFocus) {
       toFocus.focus();
@@ -3574,6 +4118,18 @@
     var active = document.activeElement;
     var inInput;
     var cameraId;
+
+    /* Banner (alert or update notice): OK opens its camera, Back dismisses. Not while typing in a field. */
+    if (state.banner && (code === 461 || code === 27 ||
+        (code === 13 && !(active && active.tagName === 'INPUT')))) {
+      event.preventDefault();
+      if (code === 13) {
+        activateBanner();
+      } else {
+        hideBanner();
+      }
+      return;
+    }
 
     /* Exit-confirm modal: it sits over the grid, so handle its keys first.
        ←/→ move between Cancel/Exit, OK activates, Back/Escape cancels. */
@@ -3763,6 +4319,7 @@
       closeForm();
     });
 
+    $('banner').addEventListener('click', activateBanner);
     $('exit-cancel').addEventListener('click', closeExitDialog);
     $('exit-confirm').addEventListener('click', exitApp);
     /* Magic Remote pointer: hovering shows the pointer's target. */
@@ -3779,6 +4336,22 @@
 
     refreshAllSnapshots();
     setInterval(refreshAllSnapshots, SNAPSHOT_INTERVAL_MS);
+
+    /* Alerts: this TV's service (subscribe while visible) or polling a network alert service. */
+    tvStart();
+    startAlertPolling();
+    document.addEventListener('visibilitychange', function () {
+      if (document.hidden) {
+        tvStopEvents();
+        hideBanner();
+      } else {
+        tvStart();
+      }
+    });
+    if (prefs.checkUpdates !== false && !isLocalDev() &&
+        Date.now() - prefs.lastUpdateCheck > UPDATE_CHECK_INTERVAL_MS) {
+      setTimeout(function () { checkForUpdate(false); }, 8000);
+    }
 
     document.addEventListener('focus', keepFocusInView, true);
     document.addEventListener('keydown', onKeyDown);

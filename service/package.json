@@ -1,0 +1,8 @@
+{
+  "name": "com.petekaik.webcamviewer.service",
+  "version": "1.0.0",
+  "description": "Receives motion alerts on the TV and shows them as an in-app banner or a toast",
+  "main": "webcam_service.js",
+  "author": "Pete Kaik",
+  "license": "MIT"
+}

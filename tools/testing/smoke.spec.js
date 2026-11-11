@@ -977,7 +977,7 @@ test('fresh install: one demo camera, notifications not set up, debug off', asyn
 	await expect(page.locator('[data-action="menu-notifications"] .menu-item-summary')).toHaveText('Not set up');
 	await expect(page.locator('[data-action="menu-developer"] .menu-item-summary')).toHaveText('Debug mode: Off');
 	await openSettingsPage(page, 'notifications');
-	await expect(page.locator('#notifications-screen')).toContainText('Set its address in Settings · Developer');
+	await expect(page.locator('#notifications-screen')).toContainText('Choose "This TV"');
 	expect(formatErrors(errors), 'uncaught page errors').toBe('');
 });
 
@@ -1069,5 +1069,198 @@ test('the player plays with sound (not muted)', async function ({page}) {
 	await page.waitForTimeout(1500);
 	// muted stays false unless the engine blocked autoplay with sound (then the app logs it).
 	expect(await page.evaluate(function () { return document.querySelector('video').muted; })).toBe(false);
+	expect(formatErrors(opened.errors), 'uncaught page errors').toBe('');
+});
+
+/* ------------------------------------- TV alert mode, in-app banner, update check */
+
+/** The TV service (service/webcam_service.js) in memory behind a fake PalmServiceBridge. */
+function installFakeTvService(page) {
+	return page.addInitScript(function () {
+		var settings = {enabled: true, cameras: {}, quietHours: {enabled: false, start: '23:00', end: '07:00'},
+			cooldownSeconds: 120, snoozeUntil: 0, types: {person: true, vehicle: true, animal: false, motion: true}};
+		var subs = [];
+		var calls = [];
+		window.__fakeTv = {
+			calls: calls,
+			settings: function () { return settings; },
+			subscribers: function () { return subs.filter(function (s) { return !s.cancelled; }).length; },
+			emit: function (event) {
+				subs.forEach(function (s) { if (!s.cancelled) s.fire({returnValue: true, event: event}); });
+			}
+		};
+		window.PalmServiceBridge = function () {
+			var self = this;
+			var sub = null;
+			this.call = function (uri, json) {
+				var method = uri.split('/').pop();
+				var params = JSON.parse(json || '{}');
+				calls.push({method: method, params: params});
+				function reply(payload) {
+					setTimeout(function () {
+						if (self.onservicecallback && !(sub && sub.cancelled)) self.onservicecallback(JSON.stringify(payload));
+					}, 0);
+				}
+				if (method === 'configure') {
+					(params.cameras || []).forEach(function (c) {
+						if (typeof settings.cameras[c.id] !== 'boolean') settings.cameras[c.id] = true;
+					});
+					reply({returnValue: true, listening: true, ip: '192.0.2.30', port: 8791, token: 'tok12345678'});
+				} else if (method === 'settings') {
+					reply({returnValue: true, settings: JSON.parse(JSON.stringify(settings))});
+				} else if (method === 'putSettings') {
+					settings = params.settings;
+					reply({returnValue: true, ok: true, settings: settings});
+				} else if (method === 'snooze') {
+					settings.snoozeUntil = params.minutes ? Date.now() + params.minutes * 60000 : 0;
+					reply({returnValue: true, ok: true, snoozeUntil: settings.snoozeUntil});
+				} else if (method === 'status') {
+					reply({returnValue: true, events: []});
+				} else if (method === 'test') {
+					reply({returnValue: true, ok: true, via: 'banner'});
+				} else if (method === 'events') {
+					sub = {cancelled: false, fire: function (p) { reply(p); }};
+					subs.push(sub);
+					reply({returnValue: true, subscribed: true});
+				} else {
+					reply({returnValue: false, errorText: 'Unknown method'});
+				}
+			};
+			this.cancel = function () { if (sub) sub.cancelled = true; };
+		};
+	});
+}
+
+/** Run before openGrid(): start with these prefs instead of the default 'home' ones. */
+function seedPrefs(page, prefs) {
+	return page.addInitScript(function (p) {
+		try { window.localStorage.setItem('webcamviewer.prefs.v1', JSON.stringify(p)); } catch (e) { /* blocked */ }
+	}, prefs);
+}
+
+const TV_PREFS = {confirmExit: true, debug: false, loggerServer: '', alertsUrl: '', tvAlerts: true, banner: true, checkUpdates: true};
+
+test('Notifications: switching the alert source to This TV configures the service and shows where to send alerts', async function ({page}) {
+	await installFakeTvService(page);
+	const opened = await openGrid(page);
+	await mockAlertsService(page);
+	await openSettings(page);
+	await openSettingsPage(page, 'notifications');
+	await expect(page.locator('[data-action="alerts-source"]')).toHaveText('Network service');
+	await expect(page.locator('[data-action="alerts-style"]')).toHaveCount(1);
+
+	await pressOkOn(page, '[data-action="alerts-source"]');
+	await expect(page.locator('[data-action="alerts-source"]')).toHaveText('This TV', {timeout: 3000});
+	await expect(page.locator('#alerts-list')).toContainText('192.0.2.30:8791');
+	await expect(page.locator('#alerts-list')).toContainText('token=tok12345678');
+	// The network-only rows are gone: a service on the TV can't show a popup, and the banner replaces "not while watching".
+	await expect(page.locator('[data-action="alerts-style"]')).toHaveCount(0);
+	await expect(page.locator('[data-action="alerts-watching"]')).toHaveCount(0);
+	const configure = await page.evaluate(function () {
+		return window.__fakeTv.calls.filter(function (c) { return c.method === 'configure'; }).pop();
+	});
+	expect(configure.params.cameras.map(function (c) { return c.id; })).toEqual(['front', 'back']);
+
+	// Edits go to the TV service, not to the network one.
+	await pressOkOn(page, '[data-action="alerts-type:person"]');
+	await expect.poll(function () {
+		return page.evaluate(function () { return window.__fakeTv.settings().types.person; });
+	}, {timeout: 3000}).toBe(false);
+	expect(formatErrors(opened.errors), 'uncaught page errors').toBe('');
+});
+
+test('TV alert mode: an alert while the app is open shows a banner; OK opens the camera, Back dismisses', async function ({page}) {
+	await installFakeTvService(page);
+	await seedPrefs(page, TV_PREFS);
+	const opened = await openGrid(page);
+	await expect.poll(function () { return page.evaluate(function () { return window.__fakeTv.subscribers(); }); }, {timeout: 3000}).toBe(1);
+
+	await page.evaluate(function () { window.__fakeTv.emit({camera: 'back', name: 'Back', type: 'person', at: new Date().toISOString()}); });
+	await expect(page.locator('#banner')).toBeVisible();
+	await expect(page.locator('#banner-title')).toHaveText('Back: Person detected');
+	await sendKey(page, 'Enter', 13);
+	await expect(page.locator('#banner')).toBeHidden();
+	expect(await waitForVisible(page, FULLSCREEN_SELECTORS, 5000)).not.toBeNull();
+	await expect.poll(function () { return page.evaluate(function () { return document.getElementById('player-name').textContent; }); }, {timeout: 3000}).toBe('Back');
+
+	// Back dismisses the banner and stays in the player.
+	await page.evaluate(function () { window.__fakeTv.emit({camera: 'front', name: 'Front', type: 'motion', at: new Date().toISOString()}); });
+	await expect(page.locator('#banner')).toBeVisible();
+	await sendKey(page, 'Back', 461);
+	await expect(page.locator('#banner')).toBeHidden();
+	expect(await firstVisible(page, FULLSCREEN_SELECTORS)).not.toBeNull();
+	expect(formatErrors(opened.errors), 'uncaught page errors').toBe('');
+});
+
+test('TV alert mode: a hidden app unsubscribes (alerts become toasts) and resubscribes when visible', async function ({page}) {
+	await installFakeTvService(page);
+	await seedPrefs(page, TV_PREFS);
+	const opened = await openGrid(page);
+	const subscribers = function () { return page.evaluate(function () { return window.__fakeTv.subscribers(); }); };
+	await expect.poll(subscribers, {timeout: 3000}).toBe(1);
+
+	const setHidden = function (hidden) {
+		return page.evaluate(function (h) {
+			Object.defineProperty(document, 'hidden', {value: h, configurable: true});
+			document.dispatchEvent(new Event('visibilitychange'));
+		}, hidden);
+	};
+	await setHidden(true);
+	await expect.poll(subscribers, {timeout: 3000}).toBe(0);
+	await setHidden(false);
+	await expect.poll(subscribers, {timeout: 3000}).toBe(1);
+	expect(formatErrors(opened.errors), 'uncaught page errors').toBe('');
+});
+
+test('network alert service: an alert it held back because the app is open becomes a banner', async function ({page}) {
+	const opened = await openGrid(page);
+	let polls = 0;
+	const cors = {'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'GET, PUT, POST, OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type'};
+	await page.route(ALERTS_BASE + '/**', function (route) {
+		if (route.request().method() === 'OPTIONS') return route.fulfill({status: 204, headers: cors});
+		const old = {at: '2026-06-15T10:00:00.000Z', camera: 'front', type: 'person', reason: 'ok', sent: true};
+		const fresh = {at: '2026-06-15T10:05:00.000Z', camera: 'back', type: 'person', reason: 'viewing', sent: false};
+		polls++;
+		return route.fulfill({status: 200, headers: cors, contentType: 'application/json',
+			body: JSON.stringify({ok: true, events: polls < 2 ? [old] : [fresh, old]})});
+	});
+	// Polling started at load against the real (unrouted) address; restart it now that the mock is in place.
+	await page.reload({waitUntil: 'load'});
+	await expect(page.locator('#banner')).toBeVisible({timeout: 12000});
+	await expect(page.locator('#banner-title')).toHaveText('Back: Person detected');
+	expect(formatErrors(opened.errors), 'uncaught page errors').toBe('');
+});
+
+test('Updates: Check now reports a newer release as a banner and the status text', async function ({page}) {
+	const feed = function (version) {
+		return {paging: {page: 1}, packages: [{id: 'com.petekaik.webcamviewer', manifest: {version: version}}]};
+	};
+	let version = '9.9.9';
+	const opened = await openGrid(page);
+	await page.route('https://raw.githubusercontent.com/**', function (route) {
+		route.fulfill({status: 200, headers: {'Access-Control-Allow-Origin': '*'}, contentType: 'application/json', body: JSON.stringify(feed(version))});
+	});
+	await openSettings(page);
+	await openSettingsPage(page, 'general');
+	await pressOkOn(page, '[data-action="general-update-check"]');
+	await expect(page.locator('#general-list')).toContainText('Update available: 9.9.9', {timeout: 5000});
+	await expect(page.locator('#banner-title')).toHaveText('Update available: 9.9.9');
+	await sendKey(page, 'Back', 461); // dismisses the banner first
+	await expect(page.locator('#banner')).toBeHidden();
+	await expect(page.locator('#general-screen')).toBeVisible();
+
+	version = '0.0.1';
+	await pressOkOn(page, '[data-action="general-update-check"]');
+	await expect(page.locator('#general-list')).toContainText('Up to date', {timeout: 5000});
+	expect(formatErrors(opened.errors), 'uncaught page errors').toBe('');
+});
+
+test('Updates: an unreachable or malformed feed says so and never throws', async function ({page}) {
+	const opened = await openGrid(page);
+	await page.route('https://raw.githubusercontent.com/**', function (route) { route.fulfill({status: 200, body: 'not json'}); });
+	await openSettings(page);
+	await openSettingsPage(page, 'general');
+	await pressOkOn(page, '[data-action="general-update-check"]');
+	await expect(page.locator('#general-list')).toContainText('Could not check', {timeout: 5000});
 	expect(formatErrors(opened.errors), 'uncaught page errors').toBe('');
 });
