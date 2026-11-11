@@ -1,0 +1,15 @@
+{
+  "name": "webos-webcam-qa",
+  "private": true,
+  "description": "Laptop-side test infrastructure for the webOS webcam viewer",
+  "scripts": {
+    "es5": "node es5-check.js",
+    "mock": "node mock-camera-server.js",
+    "test": "playwright test",
+    "test:headed": "playwright test --headed"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.56.1",
+    "acorn": "^8.18.0"
+  }
+}

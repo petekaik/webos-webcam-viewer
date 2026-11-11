@@ -1,0 +1,7 @@
+node_modules/
+build/
+*.ipk
+test-results/
+playwright-report/
+config.local.json
+.DS_Store

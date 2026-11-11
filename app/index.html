@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<!--
+  The TV talks directly to LAN camera IPs over plain HTTP (HLS) and HTTPS
+  (snapshots), plus a ws:// logger. A packaged webOS app is a file:// page,
+  so every network scheme has to be allowed explicitly. This policy is
+  deliberately permissive because there is no central proxy.
+-->
+<meta http-equiv="Content-Security-Policy" content="default-src * 'self' file: data: blob: 'unsafe-inline' 'unsafe-eval'; connect-src * 'self' file: http: https: ws: wss:; img-src * 'self' file: http: https: data: blob:; media-src * 'self' file: http: https: blob: data:; style-src * 'self' file: 'unsafe-inline'; script-src * 'self' file: 'unsafe-inline' 'unsafe-eval';">
+<title>Webcam Viewer</title>
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+<div class="app">
+
+  <!-- ---------------------------------------------------------- grid -->
+  <main id="grid-screen" class="screen grid-screen">
+    <div class="topbar">
+      <div class="topbar-left">
+        <h1 class="title">Cameras</h1>
+        <span id="count" class="count"></span>
+      </div>
+      <div class="topbar-right">
+        <span id="clock" class="clock"></span>
+        <button id="settings-btn" class="settings-btn" type="button" aria-label="Settings">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="3"></circle>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+          </svg>
+        </button>
+      </div>
+    </div>
+
+    <div id="grid" class="grid"></div>
+
+    <div class="hintbar">
+      <span class="hint">
+        <span class="keycap">&#8592; &#8594;</span><span class="hint-label">Select camera</span>
+      </span>
+      <span class="hint"><span class="keycap">OK</span><span class="hint-label">Open</span></span>
+      <span class="hint"><span class="keycap">BACK</span><span class="hint-label">Exit</span></span>
+    </div>
+  </main>
+
+  <!-- ------------------------------------------------ settings menu -->
+  <section id="settings-screen" class="screen grid-screen settings-screen is-hidden">
+    <div class="topbar">
+      <div class="topbar-left">
+        <h1 class="title">Settings</h1>
+      </div>
+    </div>
+
+    <div class="settings-scroll">
+      <div id="settings-menu" class="settings-menu"></div>
+    </div>
+
+    <div class="hintbar">
+      <span class="hint">
+        <span class="keycap">&#8593; &#8595;</span><span class="hint-label">Choose</span>
+      </span>
+      <span class="hint"><span class="keycap">OK</span><span class="hint-label">Open</span></span>
+      <span class="hint"><span class="keycap">BACK</span><span class="hint-label">Cameras</span></span>
+    </div>
+  </section>
+
+  <!-- -------------------------------------------- settings · general -->
+  <section id="general-screen" class="screen grid-screen settings-screen is-hidden">
+    <div class="topbar">
+      <div class="topbar-left">
+        <h1 class="title">Settings &#183; General</h1>
+      </div>
+    </div>
+
+    <div class="settings-scroll">
+      <div id="general-list" class="settings-list"></div>
+    </div>
+
+    <div class="hintbar">
+      <span class="hint">
+        <span class="keycap">&#8592; &#8594; &#8593; &#8595;</span><span class="hint-label">Choose</span>
+      </span>
+      <span class="hint"><span class="keycap">OK</span><span class="hint-label">Change</span></span>
+      <span class="hint"><span class="keycap">BACK</span><span class="hint-label">Settings</span></span>
+    </div>
+  </section>
+
+  <!-- --------------------------------------- settings · notifications -->
+  <section id="notifications-screen" class="screen grid-screen settings-screen is-hidden">
+    <div class="topbar">
+      <div class="topbar-left">
+        <h1 class="title">Settings &#183; Notifications</h1>
+      </div>
+    </div>
+
+    <!-- One scroll area between the fixed title and the fixed hint bar:
+         arrow-key focus and the Magic Remote wheel both scroll it. -->
+    <div class="settings-scroll">
+      <div id="alerts-list" class="settings-list"></div>
+    </div>
+
+    <div class="settings-actions">
+      <span id="alerts-save-status" class="alerts-save-status"></span>
+    </div>
+
+    <div class="hintbar">
+      <span class="hint">
+        <span class="keycap">&#8592; &#8594; &#8593; &#8595;</span><span class="hint-label">Choose</span>
+      </span>
+      <span class="hint"><span class="keycap">OK</span><span class="hint-label">Change</span></span>
+      <span class="hint"><span class="keycap">BACK</span><span class="hint-label">Settings</span></span>
+    </div>
+  </section>
+
+  <!-- -------------------------------------------- settings · cameras -->
+  <section id="cameras-screen" class="screen grid-screen settings-screen is-hidden">
+    <div class="topbar">
+      <div class="topbar-left">
+        <h1 class="title">Settings &#183; Cameras</h1>
+      </div>
+    </div>
+
+    <div class="settings-scroll">
+      <div id="settings-list" class="settings-list"></div>
+
+      <div id="settings-actions" class="settings-actions"></div>
+    </div>
+
+    <div class="hintbar">
+      <span class="hint">
+        <span class="keycap">&#8592; &#8594; &#8593; &#8595;</span><span class="hint-label">Choose</span>
+      </span>
+      <span class="hint"><span class="keycap">OK</span><span class="hint-label">Select</span></span>
+      <span class="hint"><span class="keycap">BACK</span><span class="hint-label">Settings</span></span>
+    </div>
+  </section>
+
+  <!-- ------------------------------------------ settings · developer -->
+  <section id="developer-screen" class="screen grid-screen settings-screen is-hidden">
+    <div class="topbar">
+      <div class="topbar-left">
+        <h1 class="title">Settings &#183; Developer</h1>
+      </div>
+    </div>
+
+    <div class="settings-scroll">
+      <div id="developer-list" class="settings-list"></div>
+    </div>
+
+    <div class="settings-status"><span id="developer-save-status" class="alerts-save-status"></span></div>
+
+    <div class="hintbar">
+      <span class="hint">
+        <span class="keycap">&#8592; &#8594; &#8593; &#8595;</span><span class="hint-label">Choose</span>
+      </span>
+      <span class="hint"><span class="keycap">OK</span><span class="hint-label">Change</span></span>
+      <span class="hint"><span class="keycap">BACK</span><span class="hint-label">Settings</span></span>
+    </div>
+  </section>
+
+  <!-- ------------------------------------------------------ camera form -->
+  <section id="form-screen" class="screen grid-screen form-screen is-hidden">
+    <div class="topbar">
+      <div class="topbar-left">
+        <h1 id="form-title" class="title">Add camera</h1>
+      </div>
+    </div>
+
+    <div class="form-body">
+      <div class="form-wrap">
+        <div class="form-field">
+          <label class="form-label" for="form-name">Name</label>
+          <input id="form-name" class="form-input form-focus" type="text" autocomplete="off" spellcheck="false">
+          <span id="form-name-error" class="form-error"></span>
+        </div>
+        <div class="form-field">
+          <label class="form-label" for="form-url">Stream URL</label>
+          <input id="form-url" class="form-input form-focus" type="text" autocomplete="off" spellcheck="false" placeholder="http://&#8230;/index.m3u8">
+          <span id="form-url-error" class="form-error"></span>
+        </div>
+        <div class="form-field">
+          <label class="form-label" for="form-snapshot">Preview image URL&#160;&#160;<span class="form-label-note">(optional)</span></label>
+          <input id="form-snapshot" class="form-input form-focus" type="text" autocomplete="off" spellcheck="false">
+          <span id="form-snapshot-error" class="form-error"></span>
+        </div>
+        <div class="form-actions">
+          <button id="form-save" type="button" class="btn btn--primary form-focus">Save</button>
+          <button id="form-cancel" type="button" class="btn form-focus">Cancel</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="hintbar">
+      <span class="hint"><span class="keycap">&#8593; &#8595;</span><span class="hint-label">Change field</span></span>
+      <span class="hint"><span class="keycap">OK</span><span class="hint-label">Keyboard / Select</span></span>
+      <span class="hint"><span class="keycap">BACK</span><span class="hint-label">Cancel</span></span>
+    </div>
+  </section>
+
+  <!-- -------------------------------------------------------- player -->
+  <section id="player-screen" class="screen player-screen fullscreen is-hidden" tabindex="-1" data-view="fullscreen" data-state="idle">
+    <div id="video-host" class="video-host"></div>
+    <div class="player-surface"></div>
+
+    <div id="player-centre" class="player-centre is-hidden">
+      <span id="player-spinner" class="spinner player-spinner"></span>
+      <span id="player-centre-title" class="player-centre-title"></span>
+      <span id="player-centre-detail" class="player-centre-detail"></span>
+    </div>
+
+    <div id="player-chrome" class="player-chrome">
+      <div class="player-top">
+        <div id="player-name" class="player-name"></div>
+        <span id="player-pill" class="status status--inline">
+          <span class="status-dot"></span>
+          <span id="player-status" class="status-label">Connecting&hellip;</span>
+        </span>
+      </div>
+      <div class="player-bottom">
+        <div class="hints">
+          <span class="hint"><span class="keycap">&#8592; &#8594;</span><span class="hint-label">Camera</span></span>
+          <span class="hint hint--retry"><span class="keycap">OK</span><span class="hint-label">Retry</span></span>
+          <span class="hint"><span class="keycap">BACK</span><span class="hint-label">Cameras</span></span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ------------------------------------------------- exit dialog -->
+  <div id="exit-dialog" class="modal is-hidden">
+    <div class="modal-panel">
+      <div class="modal-title">Exit Webcam Viewer?</div>
+      <div class="modal-actions">
+        <button id="exit-cancel" class="btn" type="button">Cancel</button>
+        <button id="exit-confirm" class="btn btn--danger" type="button">Exit</button>
+      </div>
+    </div>
+  </div>
+
+</div>
+<script src="js/vendor/hls.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>

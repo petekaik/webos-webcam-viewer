@@ -1,0 +1,14 @@
+{
+  "name": "webcam-alerts",
+  "version": "1.0.0",
+  "private": true,
+  "description": "UniFi Protect motion webhooks to LG webOS TV toasts over SSAP",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

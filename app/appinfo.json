@@ -1,0 +1,13 @@
+{
+  "id": "com.petekaik.webcamviewer",
+  "version": "0.3.1",
+  "vendor": "Pete Kaik",
+  "type": "web",
+  "main": "index.html",
+  "title": "Webcam Viewer",
+  "icon": "icon.png",
+  "largeIcon": "largeIcon.png",
+  "bgColor": "#060708",
+  "iconColor": "#f0b35b",
+  "disableBackHistoryAPI": true
+}

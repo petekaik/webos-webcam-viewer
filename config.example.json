@@ -1,0 +1,10 @@
+{
+  "cameras": [
+    { "id": "front", "name": "Front yard", "hls": "http://192.168.0.10/hls/front/index.m3u8", "snapshot": "http://192.168.0.10/snap/front.jpg" },
+    { "id": "back",  "name": "Back yard",  "hls": "http://192.168.0.10/hls/back/index.m3u8",  "snapshot": "" }
+  ],
+  "loggerServer": "",
+  "alertsUrl": "",
+  "debug": false,
+  "confirmExit": true
+}

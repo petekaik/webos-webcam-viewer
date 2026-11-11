@@ -1,0 +1,87 @@
+<!doctype html>
+<!--
+  tools/icon.html — source art for the Webcam Viewer app icons.
+
+  Mark: a house outline containing a camera lens — "an eye on the home".
+  Warm amber (#f0b35b family) on a near-black rounded square, with a faint
+  top-left glow for depth. Sized to read on the TV launcher bar at 130px
+  (bold strokes: ~34px at 600, i.e. ~7px at 130).
+
+  Rasterize (when Playwright is available):
+    node -e "var p=require('./testing/node_modules/playwright');(async function(){
+      var b=await p.chromium.launch();var pg=await b.newPage();
+      await pg.goto('file://'+__dirname+'/icon.html');
+      await pg.locator('#icon600').screenshot({path:'../app/largeIcon.png'});
+      await pg.locator('#icon130').screenshot({path:'../app/icon.png'});
+      await b.close();})();"
+
+  The committed PNGs were produced by tools/render-icon.js, a dependency-free
+  Node rasterizer drawing the identical geometry (keep the two in sync).
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Webcam Viewer — icon source</title>
+<style>
+  body { margin: 0; padding: 40px; background: #1a1c1e; font-family: sans-serif; color: #c9cdd0; }
+  .row { display: flex; align-items: flex-end; gap: 32px; }
+  .frame { display: inline-block; line-height: 0; }
+  p { font-size: 13px; margin: 24px 0 0; }
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute">
+  <defs>
+    <linearGradient id="amber" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffd79b"/>
+      <stop offset="0.55" stop-color="#f0b35b"/>
+      <stop offset="1" stop-color="#cf8a3c"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.32" cy="0.24" r="0.9">
+      <stop offset="0" stop-color="#f0b35b" stop-opacity="0.09"/>
+      <stop offset="0.6" stop-color="#f0b35b" stop-opacity="0.03"/>
+      <stop offset="1" stop-color="#f0b35b" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="lensGlass" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#10161d"/>
+      <stop offset="1" stop-color="#0a0c0e"/>
+    </radialGradient>
+    <radialGradient id="floor" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#f0b35b" stop-opacity="0.06"/>
+      <stop offset="1" stop-color="#f0b35b" stop-opacity="0"/>
+    </radialGradient>
+
+    <g id="mark">
+      <!-- background rounded square -->
+      <rect x="0" y="0" width="600" height="600" rx="112" fill="#0b0d0f"/>
+      <rect x="0" y="0" width="600" height="600" rx="112" fill="url(#glow)"/>
+
+      <!-- faint floor glow -->
+      <ellipse cx="300" cy="486" rx="170" ry="42" fill="url(#floor)"/>
+
+      <!-- house outline: roof chevron + open wall polyline -->
+      <g stroke="url(#amber)" stroke-width="34" stroke-linecap="round"
+         stroke-linejoin="round" fill="none">
+        <path d="M 168 268 L 300 174 L 432 268"/>
+        <path d="M 206 262 L 206 438 L 394 438 L 394 262"/>
+      </g>
+
+      <!-- lens -->
+      <circle cx="300" cy="338" r="68" fill="none" stroke="url(#amber)" stroke-width="18"/>
+      <circle cx="300" cy="338" r="36" fill="url(#lensGlass)"/>
+      <circle cx="320" cy="316" r="11" fill="#ffe9c4"/>
+    </g>
+  </defs>
+</svg>
+
+<div class="row">
+  <div class="frame" id="icon600"><svg width="600" height="600" viewBox="0 0 600 600"><use href="#mark"/></svg></div>
+  <div class="frame" id="icon260"><svg width="260" height="260" viewBox="0 0 600 600"><use href="#mark"/></svg></div>
+  <div class="frame" id="icon130"><svg width="130" height="130" viewBox="0 0 600 600"><use href="#mark"/></svg></div>
+</div>
+<p>600 / 260 / 130 px. Same artwork at webOS sizes; geometry is shared with
+tools/render-icon.js.</p>
+
+</body>
+</html>

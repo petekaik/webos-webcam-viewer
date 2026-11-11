@@ -1,0 +1,1083 @@
+/* Webcam Viewer — hand-written for the webOS 4.4 engine (Chromium 53).
+   No flex gap, no CSS grid, no CSS variables, no backdrop-filter.
+   Design language: design/DESIGN.md. Safe area: 96px sides, 54px top/bottom. */
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  background: #060708;
+  color: #f4f0e8;
+  overflow: hidden;
+  font-family: "Helvetica Neue", "Noto Sans", "Segoe UI", Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+.app {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* Static ambient warmth, kept off the compositor on purpose. */
+.app:before {
+  content: "";
+  position: absolute;
+  top: -32%;
+  left: 44%;
+  width: 1200px;
+  height: 1200px;
+  background: radial-gradient(circle,
+      rgba(240, 179, 91, 0.08) 0%,
+      rgba(240, 179, 91, 0.025) 38%,
+      rgba(0, 0, 0, 0) 68%);
+  pointer-events: none;
+}
+
+.screen {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+}
+
+.screen.is-hidden {
+  display: none;
+}
+
+.is-hidden {
+  display: none;
+}
+
+/* ------------------------------------------------------------- grid */
+
+.grid-screen {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-flex-direction: column;
+  flex-direction: column;
+  padding: 54px 96px;
+}
+
+.topbar {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-justify-content: space-between;
+  justify-content: space-between;
+  -webkit-align-items: baseline;
+  align-items: baseline;
+  height: 68px;
+  -webkit-flex-shrink: 0;
+  flex-shrink: 0;
+}
+
+.topbar-left {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-align-items: baseline;
+  align-items: baseline;
+}
+
+.title {
+  margin: 0;
+  font-size: 44px;
+  font-weight: 200;
+  letter-spacing: 0;
+  color: #faf6ee;
+}
+
+.count {
+  margin-left: 20px;
+  font-size: 20px;
+  font-weight: 300;
+  color: rgba(244, 240, 232, 0.38);
+}
+
+.clock {
+  font-size: 36px;
+  font-weight: 300;
+  letter-spacing: 0.02em;
+  color: #faf6ee;
+  font-variant-numeric: tabular-nums;
+}
+
+.topbar-right {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-align-items: center;
+  align-items: center;
+}
+
+.topbar-right .clock {
+  margin-right: 28px;
+}
+
+/* ------------------------------------------------------ settings gear */
+
+.settings-btn {
+  display: block;
+  width: 56px;
+  height: 56px;
+  margin: 0;
+  padding: 13px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 2px solid rgba(255, 255, 255, 0.14);
+  border-radius: 12px;
+  color: rgba(244, 240, 232, 0.72);
+  outline: none;
+  cursor: default;
+  -webkit-appearance: none;
+  appearance: none;
+  transition: border-color 0.12s linear, box-shadow 0.12s linear, color 0.12s linear;
+}
+
+.settings-btn:focus {
+  border-color: #f0b35b;
+  color: #f0b35b;
+  box-shadow:
+    0 0 0 2px #060708,
+    0 0 24px 6px rgba(240, 179, 91, 0.20);
+}
+
+.settings-btn svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.grid {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-flex: 1 1 auto;
+  flex: 1 1 auto;
+  -webkit-flex-wrap: wrap;
+  flex-wrap: wrap;
+  -webkit-align-items: center;
+  align-items: center;
+  -webkit-justify-content: center;
+  justify-content: center;
+}
+
+/* ------------------------------------------------------------- tile */
+
+.tile {
+  position: relative;
+  display: block;
+  width: 848px;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  background-color: #0d1013;
+  border: 4px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  font-family: inherit;
+  color: inherit;
+  text-align: left;
+  outline: none;
+  cursor: default;
+  -webkit-appearance: none;
+  appearance: none;
+  -webkit-user-select: none;
+  user-select: none;
+  transition: border-color 0.12s linear, box-shadow 0.12s linear;
+}
+
+.tile + .tile {
+  margin-left: 32px;
+}
+
+/* 3-4 cameras: rows of two smaller 16:9 tiles, vertically centred. */
+.grid--quad {
+  -webkit-flex-direction: column;
+  flex-direction: column;
+  -webkit-justify-content: center;
+  justify-content: center;
+}
+
+.grid-row {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-justify-content: center;
+  justify-content: center;
+  -webkit-flex-shrink: 0;
+  flex-shrink: 0;
+}
+
+.grid-row + .grid-row {
+  margin-top: 32px;
+}
+
+.grid--quad .tile {
+  width: 714px;
+}
+
+.grid--quad .tile + .tile {
+  margin-left: 32px;
+}
+
+.tile:focus {
+  border-color: #f0b35b;
+  box-shadow:
+    0 0 0 2px #060708,
+    0 0 38px 8px rgba(240, 179, 91, 0.20);
+}
+
+.tile-media {
+  position: relative;
+  display: block;
+  height: 0;
+  padding-top: 56.25%; /* (848-8) * 9/16 = 472.5 -> tile lands at ~481px tall */
+  overflow: hidden;
+  background-color: #0b0e11;
+}
+
+/* Diagonal hairline texture for non-live surfaces. */
+.tile-surface {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  background: repeating-linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.022) 0,
+    rgba(255, 255, 255, 0.022) 1px,
+    rgba(255, 255, 255, 0) 1px,
+    rgba(255, 255, 255, 0) 14px
+  );
+}
+
+.tile-img {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  -o-object-fit: cover;
+  object-fit: cover;
+  transition: opacity 0.25s ease, -webkit-filter 0.25s ease;
+}
+
+.tile-media.is-dimmed .tile-img {
+  -webkit-filter: brightness(0.32);
+  filter: brightness(0.32);
+}
+
+/* Legibility scrims over the feed: reads on bright frames. */
+.tile-scrim {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  background:
+    linear-gradient(180deg, rgba(6, 7, 8, 0.58) 0%, rgba(6, 7, 8, 0) 130px),
+    linear-gradient(0deg, rgba(6, 7, 8, 0.92) 0%, rgba(6, 7, 8, 0) 210px);
+}
+
+/* ------------------------------------------------- tile states */
+
+.tile-stateview {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 60px;
+  left: 0;
+  display: -webkit-flex;
+  display: flex;
+  -webkit-flex-direction: column;
+  flex-direction: column;
+  -webkit-align-items: center;
+  align-items: center;
+  -webkit-justify-content: center;
+  justify-content: center;
+  padding: 0 48px;
+  text-align: center;
+}
+
+.tile-stateview-title {
+  font-size: 36px;
+  font-weight: 600;
+  color: #faf6ee;
+}
+
+.tile-stateview.is-hidden {
+  display: none;
+}
+
+.tile-stateview-detail {
+  margin-top: 10px;
+  font-size: 21px;
+  color: rgba(244, 240, 232, 0.60);
+}
+
+/* ---------------------------------------------------------- spinner */
+
+.spinner {
+  display: block;
+  width: 46px;
+  height: 46px;
+  margin-bottom: 22px;
+  border: 3px solid rgba(240, 179, 91, 0.18);
+  border-top-color: #f0b35b;
+  border-radius: 50%;
+  -webkit-animation: spin 0.9s linear infinite;
+  animation: spin 0.9s linear infinite;
+}
+
+.spinner.is-hidden {
+  display: none;
+}
+
+@-webkit-keyframes spin {
+  from { -webkit-transform: rotate(0deg); }
+  to   { -webkit-transform: rotate(360deg); }
+}
+
+@keyframes spin {
+  from { -webkit-transform: rotate(0deg); transform: rotate(0deg); }
+  to   { -webkit-transform: rotate(360deg); transform: rotate(360deg); }
+}
+
+/* ------------------------------------------------------- status pill */
+
+.status {
+  position: absolute;
+  top: 20px;
+  left: 20px;
+  display: -webkit-flex;
+  display: flex;
+  -webkit-align-items: center;
+  align-items: center;
+  padding: 11px 18px 11px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+  background: rgba(6, 7, 8, 0.74);
+  font-size: 22px;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.status--inline {
+  position: static;
+}
+
+.status-dot {
+  width: 10px;
+  height: 10px;
+  margin-right: 10px;
+  border-radius: 50%;
+  background: rgba(244, 240, 232, 0.45);
+}
+
+.status--live .status-dot {
+  background: #6fd39a;
+  box-shadow: 0 0 0 3px rgba(111, 211, 154, 0.16);
+}
+
+.status--reconnecting {
+  border-color: rgba(240, 179, 91, 0.42);
+}
+
+.status--reconnecting .status-dot {
+  background: #f0b35b;
+}
+
+.status--offline {
+  border-color: rgba(224, 106, 90, 0.42);
+}
+
+.status--offline .status-dot {
+  background: #e06a5a;
+}
+
+.status-label {
+  color: rgba(244, 240, 232, 0.92);
+}
+
+/* -------------------------------------------------------- tile footer */
+
+.tile-footer {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  padding: 0 32px 26px;
+}
+
+.tile-name {
+  display: block;
+  font-size: 30px;
+  font-weight: 600;
+  line-height: 1.15;
+  color: #faf6ee;
+}
+
+.tile-meta {
+  display: block;
+  margin-top: 6px;
+  font-size: 20px;
+  color: rgba(244, 240, 232, 0.62);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ----------------------------------------------------------- player */
+
+.player-screen {
+  background: #000;
+  outline: none;
+}
+
+.video-host {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: #000;
+}
+
+.video-host video {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: #000;
+  -o-object-fit: contain;
+  object-fit: contain;
+}
+
+/* Hatched surface over a dead stream: designed state, not a black screen. */
+.player-surface {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  opacity: 0;
+  background: repeating-linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.022) 0,
+    rgba(255, 255, 255, 0.022) 1px,
+    rgba(255, 255, 255, 0) 1px,
+    rgba(255, 255, 255, 0) 14px
+  );
+  transition: opacity 0.25s ease;
+}
+
+.player-screen[data-state="backoff"] .player-surface,
+.player-screen[data-state="dead"] .player-surface {
+  opacity: 1;
+}
+
+.player-centre {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  display: -webkit-flex;
+  display: flex;
+  -webkit-flex-direction: column;
+  flex-direction: column;
+  -webkit-align-items: center;
+  align-items: center;
+  -webkit-justify-content: center;
+  justify-content: center;
+  padding: 0 240px;
+  text-align: center;
+}
+
+.player-centre-title {
+  font-size: 44px;
+  font-weight: 600;
+  color: #faf6ee;
+}
+
+.player-centre.is-hidden {
+  display: none;
+}
+
+.player-centre-detail {
+  margin-top: 12px;
+  font-size: 24px;
+  color: rgba(244, 240, 232, 0.62);
+}
+
+.player-spinner {
+  width: 64px;
+  height: 64px;
+  margin-bottom: 28px;
+  border-width: 4px;
+}
+
+/* Player chrome: top name + status pill, bottom hints. Fades when steady. */
+.player-chrome {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  pointer-events: none;
+  opacity: 1;
+  transition: opacity 0.5s ease;
+}
+
+.player-chrome.is-dimmed {
+  opacity: 0;
+}
+
+.player-top {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  display: -webkit-flex;
+  display: flex;
+  -webkit-align-items: flex-start;
+  align-items: flex-start;
+  -webkit-justify-content: space-between;
+  justify-content: space-between;
+  padding: 54px 96px 140px;
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.72) 0%, rgba(0, 0, 0, 0) 100%);
+}
+
+.player-name {
+  font-size: 40px;
+  font-weight: 600;
+  line-height: 1.1;
+  color: #faf6ee;
+}
+
+.player-bottom {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  display: -webkit-flex;
+  display: flex;
+  -webkit-justify-content: center;
+  justify-content: center;
+  padding: 140px 96px 54px;
+  background: linear-gradient(0deg, rgba(0, 0, 0, 0.78) 0%, rgba(0, 0, 0, 0) 100%);
+}
+
+/* ------------------------------------------------------------ hints */
+
+.hintbar {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-align-items: center;
+  align-items: center;
+  -webkit-justify-content: center;
+  justify-content: center;
+  height: 56px;
+  -webkit-flex-shrink: 0;
+  flex-shrink: 0;
+}
+
+.hints {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-align-items: center;
+  align-items: center;
+}
+
+.hint {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-align-items: center;
+  align-items: center;
+  margin: 0 30px;
+  font-size: 22px;
+  color: rgba(244, 240, 232, 0.62);
+  white-space: nowrap;
+}
+
+.keycap {
+  display: inline-block;
+  margin-right: 12px;
+  padding: 6px 13px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.04);
+  color: #f4f0e8;
+  font-size: 18px;
+  line-height: 1.1;
+  text-align: center;
+}
+
+.hint-label {
+  margin-left: 0;
+}
+
+/* --------------------------------------------------------- settings */
+
+.settings-list {
+  -webkit-flex: 1 1 auto;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 28px 0;
+}
+
+/* Every settings page is one scroll area between the fixed title and the
+   fixed hint bar: arrow-key focus and the Magic Remote wheel both scroll it. */
+.settings-scroll {
+  -webkit-flex: 1 1 auto;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.settings-scroll .settings-list,
+.settings-scroll .settings-menu {
+  -webkit-flex: none;
+  flex: none;
+  overflow: visible;
+}
+
+/* ---------------------------------------------------- settings menu */
+
+.settings-menu {
+  padding: 28px 0;
+}
+
+/* One big TV row per settings page: title + muted summary + chevron. */
+.menu-item {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-align-items: center;
+  align-items: center;
+  width: 100%;
+  min-height: 132px;
+  margin: 0;
+  padding: 22px 32px;
+  background-color: #0d1013;
+  border: 2px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  font-family: inherit;
+  text-align: left;
+  color: inherit;
+  outline: none;
+  cursor: default;
+  -webkit-appearance: none;
+  appearance: none;
+  -webkit-user-select: none;
+  user-select: none;
+  transition: border-color 0.12s linear, box-shadow 0.12s linear;
+}
+
+.menu-item + .menu-item {
+  margin-top: 20px;
+}
+
+.menu-item:focus {
+  border-color: #f0b35b;
+  box-shadow:
+    0 0 0 2px #060708,
+    0 0 24px 6px rgba(240, 179, 91, 0.18);
+}
+
+.menu-item-text {
+  -webkit-flex: 1 1 auto;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.menu-item-title {
+  display: block;
+  font-size: 30px;
+  font-weight: 600;
+  line-height: 1.15;
+  color: #faf6ee;
+}
+
+.menu-item-summary {
+  display: block;
+  margin-top: 8px;
+  font-size: 20px;
+  color: rgba(244, 240, 232, 0.62);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.menu-item-chevron {
+  margin-left: 32px;
+  font-size: 30px;
+  font-weight: 300;
+  color: rgba(244, 240, 232, 0.62);
+}
+
+.settings-row {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-align-items: center;
+  align-items: center;
+  min-height: 132px;
+  padding: 22px 32px;
+  background-color: #0d1013;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+}
+
+.settings-row + .settings-row {
+  margin-top: 20px;
+}
+
+.settings-row-text {
+  -webkit-flex: 1 1 auto;
+  flex: 1 1 auto;
+  min-width: 0;
+  margin-right: 32px;
+}
+
+.settings-row-name {
+  display: block;
+  font-size: 30px;
+  font-weight: 600;
+  line-height: 1.15;
+  color: #faf6ee;
+}
+
+.settings-row-url {
+  display: block;
+  margin-top: 8px;
+  font-size: 20px;
+  color: rgba(244, 240, 232, 0.62);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.settings-confirm-text {
+  margin-right: 24px;
+  font-size: 24px;
+  color: #faf6ee;
+  white-space: nowrap;
+}
+
+.settings-actions {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-align-items: center;
+  align-items: center;
+  -webkit-justify-content: center;
+  justify-content: center;
+  padding-bottom: 28px;
+  -webkit-flex-shrink: 0;
+  flex-shrink: 0;
+}
+
+/* ------------------------------------------------------------ button */
+
+.btn {
+  display: block;
+  margin: 0;
+  padding: 14px 26px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 2px solid rgba(255, 255, 255, 0.14);
+  border-radius: 10px;
+  font-family: inherit;
+  font-size: 22px;
+  line-height: 1.2;
+  color: #f4f0e8;
+  white-space: nowrap;
+  outline: none;
+  cursor: default;
+  -webkit-appearance: none;
+  appearance: none;
+  -webkit-user-select: none;
+  user-select: none;
+  transition: border-color 0.12s linear, box-shadow 0.12s linear, color 0.12s linear;
+}
+
+.btn + .btn {
+  margin-left: 16px;
+}
+
+.btn:focus {
+  border-color: #f0b35b;
+  box-shadow:
+    0 0 0 2px #060708,
+    0 0 24px 6px rgba(240, 179, 91, 0.18);
+}
+
+.btn[disabled] {
+  opacity: 0.35;
+}
+
+.btn--primary:focus {
+  color: #f0b35b;
+}
+
+.btn--danger:focus {
+  border-color: #e06a5a;
+  color: #e06a5a;
+  box-shadow:
+    0 0 0 2px #060708,
+    0 0 24px 6px rgba(224, 106, 90, 0.18);
+}
+
+/* ------------------------------------------------------------ alerts */
+
+/* Toggle "on" state: green border + tinted text, text carries the state too */
+.btn.is-on {
+  border-color: rgba(111, 211, 154, 0.55);
+  color: #b8e6c9;
+}
+
+.btn.is-on:focus {
+  border-color: #f0b35b;
+  color: #f4f0e8;
+}
+
+/* Stepper labels and (non-focusable) values between the − / + buttons. */
+.alert-stepper-label {
+  margin: 0 16px;
+  font-size: 20px;
+  color: rgba(244, 240, 232, 0.62);
+  white-space: nowrap;
+}
+
+.alert-value {
+  display: inline-block;
+  min-width: 96px;
+  margin: 0 16px;
+  font-size: 24px;
+  line-height: 1.2;
+  color: #faf6ee;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.alerts-save-status {
+  display: block;
+  min-height: 32px;
+  font-size: 22px;
+  color: rgba(244, 240, 232, 0.72);
+}
+
+.alerts-save-status.is-error {
+  color: #e06a5a;
+}
+
+/* ------------------------------------------------------------- modal */
+
+/* Centred panel over a dimmed grid (confirm-exit). */
+.modal {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 20;
+  display: -webkit-flex;
+  display: flex;
+  -webkit-align-items: center;
+  align-items: center;
+  -webkit-justify-content: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.66);
+}
+
+.modal.is-hidden {
+  display: none;
+}
+
+.modal-panel {
+  padding: 48px 56px;
+  background-color: #0d1013;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 16px;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.6);
+  text-align: center;
+}
+
+.modal-title {
+  font-size: 36px;
+  font-weight: 600;
+  line-height: 1.2;
+  color: #faf6ee;
+}
+
+.modal-actions {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-justify-content: center;
+  justify-content: center;
+  margin-top: 40px;
+}
+
+/* ------------------------------------------------------------ form */
+
+.form-body {
+  -webkit-flex: 1 1 auto;
+  flex: 1 1 auto;
+  min-height: 0;
+  display: -webkit-flex;
+  display: flex;
+  -webkit-align-items: center;
+  align-items: center;
+  -webkit-justify-content: center;
+  justify-content: center;
+}
+
+.form-wrap {
+  width: 960px;
+  max-width: 100%;
+}
+
+.form-field {
+  margin-bottom: 26px;
+}
+
+.form-label {
+  display: block;
+  margin-bottom: 10px;
+  font-size: 22px;
+  color: rgba(244, 240, 232, 0.62);
+}
+
+.form-label-note {
+  font-weight: 300;
+  color: rgba(244, 240, 232, 0.40);
+}
+
+.form-input {
+  display: block;
+  width: 100%;
+  margin: 0;
+  padding: 16px 20px;
+  background: #0d1013;
+  border: 2px solid rgba(255, 255, 255, 0.14);
+  border-radius: 10px;
+  font-family: inherit;
+  font-size: 28px;
+  line-height: 1.25;
+  color: #faf6ee;
+  outline: none;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.form-input:focus {
+  border-color: #f0b35b;
+  box-shadow:
+    0 0 0 2px #060708,
+    0 0 24px 6px rgba(240, 179, 91, 0.18);
+}
+
+.form-input.has-error {
+  border-color: #e06a5a;
+}
+
+.form-error {
+  display: block;
+  min-height: 26px;
+  margin-top: 8px;
+  font-size: 20px;
+  color: #e06a5a;
+}
+
+.form-actions {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-justify-content: center;
+  justify-content: center;
+  margin-top: 40px;
+}
+
+/* -------------------------------------------------------- responsive */
+
+@media (max-width: 1100px) {
+  .grid-screen {
+    padding: 40px 40px 32px 40px;
+  }
+
+  .tile {
+    width: 78%;
+    margin: 14px 0;
+  }
+
+  .tile + .tile {
+    margin-left: 0;
+  }
+
+  .topbar {
+    height: 56px;
+  }
+
+  .player-top,
+  .player-bottom {
+    padding: 32px 40px;
+  }
+
+  .player-centre {
+    padding: 0 48px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tile {
+    transition: none;
+  }
+
+  .spinner {
+    -webkit-animation: none;
+    animation: none;
+  }
+}
+
+/* Nothing to retry while the stream is live. */
+.player-screen[data-state="streaming"] .hint--retry {
+  display: none;
+}
+
+/* -------------------------------------------- scrollbars (all scroll areas) */
+/* Thin, rounded, in the app's palette (::-webkit-scrollbar works on Chromium 53). */
+.settings-scroll::-webkit-scrollbar {
+  width: 10px;
+}
+
+.settings-scroll::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 5px;
+}
+
+.settings-scroll::-webkit-scrollbar-thumb {
+  background: rgba(244, 240, 232, 0.28);
+  border-radius: 5px;
+}
+
+/* Room between the rows and the scrollbar. */
+.settings-scroll {
+  padding-right: 18px;
+}
+
+/* ------------------------------------- Settings · Cameras status badge */
+.settings-row-status {
+  -webkit-flex-shrink: 0;
+  flex-shrink: 0;
+  margin-right: 28px;
+}
+
+/* ----------------------------------------- Settings · Developer fields */
+.dev-input {
+  -webkit-flex: 0 0 560px;
+  flex: 0 0 560px;
+  width: 560px;
+  margin-right: 20px;
+  font-size: 24px;
+}

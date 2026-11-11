@@ -1,0 +1,32 @@
+{
+  "paging": {
+    "page": 1,
+    "count": 1,
+    "maxPage": 1,
+    "itemsTotal": 1
+  },
+  "packages": [
+    {
+      "id": "com.petekaik.webcamviewer",
+      "title": "Webcam Viewer",
+      "iconUri": "https://raw.githubusercontent.com/petekaik/webos-webcam-viewer/main/app/icon.png",
+      "manifest": {
+        "id": "com.petekaik.webcamviewer",
+        "version": "0.3.1",
+        "type": "web",
+        "title": "Webcam Viewer",
+        "appDescription": "Watch your IP cameras live on your LG TV with the remote: HLS video with sound, 1-4 cameras.",
+        "iconUri": "https://raw.githubusercontent.com/petekaik/webos-webcam-viewer/main/app/icon.png",
+        "sourceUrl": "https://github.com/petekaik/webos-webcam-viewer",
+        "rootRequired": false,
+        "ipkUrl": "https://github.com/petekaik/webos-webcam-viewer/releases/download/v0.3.1/com.petekaik.webcamviewer_0.3.1_all.ipk",
+        "ipkHash": {
+          "sha256": "17fdd7d3b5d6eec328421952056d2cea0ad8ad8dcd86cab04fcefeb7e1710077"
+        },
+        "ipkSize": 128058
+      },
+      "pool": "main",
+      "shortDescription": "Watch your IP cameras on your LG TV"
+    }
+  ]
+}
